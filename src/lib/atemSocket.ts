@@ -191,6 +191,7 @@ export class AtemSocket extends EventEmitter<AtemSocketEvents> {
 	private _parseCommands(buffer: Buffer): IDeserializedCommand[] {
 		const parsedCommands: IDeserializedCommand[] = []
 		let isFirstCommand = true
+		let keepCache = false
 
 		while (buffer.length > 8) {
 			const length = buffer.readUInt16BE(0)
@@ -218,6 +219,8 @@ export class AtemSocket extends EventEmitter<AtemSocketEvents> {
 						// If the first command is a TimeCommand, we need to check if the remaining data matches
 						// the last batch's remainder.
 						if (cmd instanceof TimeCommand) {
+							// Mark cache as valid for this batch, as the first command is a TimeCommand.
+							keepCache = true
 							const remainder = buffer.slice(length)
 							// Check if the remaining commands match the last batch, if so, skip them.
 							if (this._lastTimeCommandRemainder && remainder.equals(this._lastTimeCommandRemainder)) {
@@ -226,10 +229,6 @@ export class AtemSocket extends EventEmitter<AtemSocketEvents> {
 							}
 							// Otherwise, cache the remainder for comparison with the next batch.
 							this._lastTimeCommandRemainder = Buffer.from(remainder)
-						} else {
-							// Clear the cache if the first command is not a TimeCommand,
-							// as the remainder would not be valid anymore.
-							this._lastTimeCommandRemainder = undefined
 						}
 					}
 
@@ -246,6 +245,12 @@ export class AtemSocket extends EventEmitter<AtemSocketEvents> {
 
 			// Trim the buffer
 			buffer = buffer.slice(length)
+		}
+
+		if (!keepCache) {
+			// Always clear the cache if the first command was not a TimeCommand,
+			// as the remainder could be invalid.
+			this._lastTimeCommandRemainder = undefined
 		}
 
 		if (parsedCommands.length > 0) {
